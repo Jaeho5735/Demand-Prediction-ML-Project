@@ -16,7 +16,8 @@ def train_and_evaluate(X_train, X_test, y_train, y_test):
         n_jobs=-1,
         random_state=42
     )
-    model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+
+    model.fit(X_train, y_train)
     pred = model.predict(X_test)
 
     mae = mean_absolute_error(y_test, pred)

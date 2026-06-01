@@ -13,15 +13,46 @@ def preprocess_sales_data(df):
     'Table_Count' : '테이블수'}, 
     inplace = True)
     
-    # 비용 반올림 처리
-    df['인건비용'] = df['인건비용'].round(-2)
-    df['기타비용'] = df['기타비용'].round(-2)
+    # 시계열 순서 보장을 위한 정렬 (필수)
+    df = df.sort_values('날짜').reset_index(drop=True)
 
     df['월'] = df['날짜'].dt.month
+    df['요일'] = df['날짜'].dt.dayofweek # 0:월, 6:일 추가
+    #  요일 숫자를 문자열 이름으로 매핑 (더미 변수 컬럼명을 이쁘게 만들기 위함)
+    weekday_map = {0: '월', 1: '화', 2: '수', 3: '목', 4: '금', 5: '토', 6: '일'}
+    df['요일'] = df['요일'].map(weekday_map)
+    # 요일 데이터 더미화 (One-Hot Encoding)
+    # 다중공선성(Multicollinearity) 방지를 위해 drop_first=True를 쓸 수도 있으나, 
+    # 트리 기반 모델(XGBoost)은 그냥 모두 쓰는 것이 직관적이고 성능에 유리함.
+    df_dummies = pd.get_dummies(df['요일'], prefix='요일', dtype=int)
+    df = pd.concat([df, df_dummies], axis=1)
+
     # 시계열 피처 생성
     df['전일매출'] = df['일매출'].shift(1)
+    # 당일 매출이 포함되지 않도록 shift(1) 후 rolling 적용 (Data Leakage 방지)
     df['7일평균매출'] = df['일매출'].rolling(window=7).mean()
     df['연월'] = df['날짜'].dt.strftime('%Y%m').astype(int)
+    df['전주매출'] = df['일매출'].shift(7)
+    df['14일평균매출'] = df['일매출'].rolling(window=14).mean()
+    df['28일평균매출'] = df['일매출'].rolling(window=28).mean()
+    df.dropna(inplace=True)
+    df.reset_index(inplace=True)
+    df.drop(columns=['index'], inplace=True)
+
+    # 연말특수지수 파생변수 생성
+    df['연말특수지수'] = 0
+    # 1. 12월 조건 정의
+    is_december = df['날짜'].dt.month == 12
+    # 2. 요일 조건 정의 (평일 목금은 회사 회식, 주말 토요일은 동호회, 모임 회식)
+    is_weekend_rush = (df['요일_목'] == 1) | (df['요일_금'] == 1) | (df['요일_토'] == 1)
+    # 3. 연말 피크 시즌 조건 정의 (12월 22일 ~ 31일)
+    is_end_of_year = df['날짜'].dt.day >= 22
+    # 4. 조건 경합하여 연말특수지수를 1로 채우기
+    # 조건 A: 12월이면서 평일
+    df.loc[is_december & is_weekend_rush, '연말특수지수'] = 1
+    
+    # 조건 B: 12월이면서 22일~31일 (대관 및 연말 예약 폭주 기간)
+    df.loc[is_december & is_end_of_year, '연말특수지수'] = 1
 
     return df
 
@@ -52,11 +83,11 @@ def preprocess_cpi_data(cpi_data):
         return pd.Series(weighted_avg)
 
     # 전체 품목 및 식료품 가중 평균 산출
-    total_weighted_avg = get_weighted_avg(cpi_data.index)
+    meat_weighted_avg = get_weighted_avg(2)
     food_weighted_avg = get_weighted_avg(range(5))
 
     df_cpi_result = pd.DataFrame({
-        '전체품목가중평균': total_weighted_avg,
+        '육류가중평균': meat_weighted_avg,
         '식료품가중평균': food_weighted_avg
     })
     
@@ -74,13 +105,13 @@ def preprocess_cpi_data(cpi_data):
 def add_holiday_features(holiday_df, year):
     kr_holidays = holidays.KR(years = year)
     holiday_list = [d.strftime('%Y-%m-%d') for d in kr_holidays]
-    holiday_df['요일'] = holiday_df['날짜'].dt.dayofweek
     holiday_df['공휴일여부'] = holiday_df['날짜'].isin(holiday_list).astype(int)
     holiday_df['공휴일전날'] = holiday_df['공휴일여부'].shift(-1).fillna(0).astype(int)
     
     # 휴일지수: 금(4), 토(5), 일(6) + 공휴일 + 공휴일전날
-    holiday_df['휴일지수'] = ((holiday_df['요일'].isin([4, 5, 6])) | (holiday_df['공휴일여부'] | holiday_df['공휴일전날'])).astype(int)
-    holiday_df.drop(['요일', '공휴일여부', '공휴일전날'],axis=1, inplace=True)
+    # 요일 컬럼은 위에서 생성하므로 여기서는 계산용으로만 활용
+    holiday_df['휴일지수'] = ((holiday_df['요일'].isin(['금', '토', '일'])) | (holiday_df['공휴일여부'] | holiday_df['공휴일전날'])).astype(int)
+    holiday_df.drop(['요일','공휴일여부', '공휴일전날', '월'], axis=1, inplace=True)
     return holiday_df
 
 def merge_data(sales_data, weather_data, cpi_data):
@@ -91,7 +122,8 @@ def merge_data(sales_data, weather_data, cpi_data):
     df = pd.merge(df, cpi_df, on='연월', how='left')
     df = add_holiday_features(df, [2025, 2026])
     
-    # 결측치(이동평균 등) 제거 및 인덱스 정리
-    df = df.fillna(0).iloc[7:].reset_index(drop=True)
+    # 최장 이동평균인 28일치 결측치 제거
+    df = df.dropna(subset=['28일평균매출', '전일매출']).reset_index(drop=True)
+    df = df.fillna(0) # 기타 외부 변수 결측치만 0 처리
     df.drop(columns=['연월'], inplace=True)
     return df
