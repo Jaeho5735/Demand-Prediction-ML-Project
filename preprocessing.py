@@ -1,5 +1,6 @@
 import pandas as pd
 import holidays
+import numpy as np
 
 def preprocess_sales_data(df):
     # 날짜 데이터 타입 변환
@@ -18,6 +19,13 @@ def preprocess_sales_data(df):
 
     df['월'] = df['날짜'].dt.month
     df['요일'] = df['날짜'].dt.dayofweek # 0:월, 6:일 추가
+    df['일'] = df['날짜'].dt.day
+
+    # 시간의 주기성 반영 (12월-1월, 31일-1일의 연속성 학습)
+    df['월_sin'] = np.sin(2 * np.pi * df['월'] / 12)
+    df['월_cos'] = np.cos(2 * np.pi * df['월'] / 12)
+    df['일_sin'] = np.sin(2 * np.pi * df['일'] / 31)
+    df['일_cos'] = np.cos(2 * np.pi * df['일'] / 31)
     #  요일 숫자를 문자열 이름으로 매핑 (더미 변수 컬럼명을 이쁘게 만들기 위함)
     weekday_map = {0: '월', 1: '화', 2: '수', 3: '목', 4: '금', 5: '토', 6: '일'}
     df['요일'] = df['요일'].map(weekday_map)
@@ -29,12 +37,11 @@ def preprocess_sales_data(df):
 
     # 시계열 피처 생성
     df['전일매출'] = df['일매출'].shift(1)
-    # 당일 매출이 포함되지 않도록 shift(1) 후 rolling 적용 (Data Leakage 방지)
-    df['7일평균매출'] = df['일매출'].rolling(window=7).mean()
+    df['7일평균매출'] = df['일매출'].shift(1).rolling(window=7).mean()
     df['연월'] = df['날짜'].dt.strftime('%Y%m').astype(int)
     df['전주매출'] = df['일매출'].shift(7)
-    df['14일평균매출'] = df['일매출'].rolling(window=14).mean()
-    df['28일평균매출'] = df['일매출'].rolling(window=28).mean()
+    df['14일평균매출'] = df['일매출'].shift(1).rolling(window=14).mean()
+    df['28일평균매출'] = df['일매출'].shift(1).rolling(window=28).mean()
     df.dropna(inplace=True)
     df.reset_index(inplace=True)
     df.drop(columns=['index'], inplace=True)

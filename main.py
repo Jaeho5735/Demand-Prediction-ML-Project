@@ -1,5 +1,4 @@
 import sys
-import numpy as np
 from sklearn.model_selection import train_test_split
 from data_loader import data_load, load_weather_data, load_cpi_data
 from preprocessing import merge_data
@@ -23,13 +22,11 @@ def main():
     # 피처 리스트
     features = ['인건비용', '식자재비용', '기타비용', '테이블수', '평균기온', '강수계속시간',
              '육류가중평균', '식료품가중평균', '휴일지수', '비올확률', '전일매출', '7일평균매출', '요일_월', '요일_화',
-            '요일_수', '요일_목', '요일_금', '요일_토', '요일_일', '전주매출', '14일평균매출', '28일평균매출', '연말특수지수']
-            
+            '요일_수', '요일_목', '요일_금', '요일_토', '요일_일', '전주매출', '14일평균매출', '28일평균매출', '연말특수지수', '월_sin', '월_cos', '일_sin', '일_cos']
     
     X = df[features]
     y = df['일매출']
 
-    # 과거 데이터로 미래를 예측하므로 셔플 없이 분할
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=True, random_state=42)
 
     print("3. 모델 학습 및 평가를 진행하는 중...")

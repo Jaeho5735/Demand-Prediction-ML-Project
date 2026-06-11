@@ -1,5 +1,6 @@
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
+from sklearn.model_selection import GridSearchCV
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -7,17 +8,32 @@ import platform
 
 # 모델 학습 및 평가 함수
 def train_and_evaluate(X_train, X_test, y_train, y_test):
-    model = XGBRegressor(
-        n_estimators=1000, 
-        learning_rate=0.01, 
-        max_depth=5, 
-        subsample=0.8, 
-        colsample_bytree=0.8,
+    xgb = XGBRegressor(
         n_jobs=-1,
         random_state=42
     )
 
-    model.fit(X_train, y_train)
+    # 탐색할 파라미터 그리드 설정
+    param_grid = {
+        'n_estimators': [500, 700, 1000],
+        'learning_rate': [0.01, 0.05, 0.1],
+        'max_depth': [3, 5, 7],
+        'subsample': [0.8, 0.9, 1.0]
+    }
+
+    # GridSearchCV 설정 (3-Fold 교차 검증)
+    grid_search = GridSearchCV(
+        estimator=xgb,
+        param_grid=param_grid,
+        cv=3,
+        scoring='r2',
+        verbose=1
+    )
+
+    grid_search.fit(X_train, y_train)
+    model = grid_search.best_estimator_
+    print(f"최적 파라미터: {grid_search.best_params_}")
+
     pred = model.predict(X_test)
 
     mae = mean_absolute_error(y_test, pred)
