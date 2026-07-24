@@ -1,6 +1,7 @@
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+from sklearn.base import clone
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -21,11 +22,14 @@ def train_and_evaluate(X_train, X_test, y_train, y_test):
         'subsample': [0.8, 0.9, 1.0]
     }
 
-    # GridSearchCV 설정 (3-Fold 교차 검증)
+    # GridSearchCV 설정 (TimeSeriesSplit 기반 3-Fold 교차 검증)
+    # 시계열 데이터이므로 각 폴드의 학습 구간이 항상 검증 구간보다 과거여야 함.
+    # 기본 KFold(shuffle=False)는 구간을 시간순으로 자르긴 하지만, 앞쪽 구간을 검증하는
+    # 폴드에서는 뒤쪽(미래) 구간이 학습에 쓰여 미래 정보가 유입되는 문제가 있어 TimeSeriesSplit로 대체.
     grid_search = GridSearchCV(
         estimator=xgb,
         param_grid=param_grid,
-        cv=3,
+        cv=TimeSeriesSplit(n_splits=3),
         scoring='r2',
         verbose=1
     )
@@ -46,6 +50,37 @@ def train_and_evaluate(X_train, X_test, y_train, y_test):
     print(f"RMSE (제곱근 평균 제곱 오차): {rmse:,.0f}원")
 
     return model, pred
+
+def walk_forward_evaluate(X, y, base_model, n_splits=5):
+    """
+    마지막 20% 단일 홀드아웃 평가는 그 구간이 우연히 특이 시즌(예: 연말)에
+    쏠릴 경우 결과가 왜곡될 수 있다. TimeSeriesSplit으로 여러 시점을 기준으로
+    학습/검증을 반복(walk-forward)하여 더 안정적인 성능 추정치를 얻는다.
+    base_model과 동일한 하이퍼파라미터로 각 폴드마다 새로 학습한다.
+    """
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+    fold_results = []
+
+    print(f"\n--- Walk-Forward 검증 ({n_splits}-Fold, TimeSeriesSplit) ---")
+    for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X), start=1):
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+        fold_model = clone(base_model)
+        fold_model.fit(X_train, y_train)
+        pred = fold_model.predict(X_test)
+
+        r2 = r2_score(y_test, pred)
+        mae = mean_absolute_error(y_test, pred)
+        fold_results.append({'fold': fold_idx, 'train_size': len(X_train), 'test_size': len(X_test), 'r2': r2, 'mae': mae})
+        print(f"Fold {fold_idx}: train={len(X_train)}, test={len(X_test)} | R2={r2:.4f} | MAE={mae:,.0f}원")
+
+    r2_values = [f['r2'] for f in fold_results]
+    mae_values = [f['mae'] for f in fold_results]
+    print(f"\n평균 R2: {np.mean(r2_values):.4f} (표준편차 {np.std(r2_values):.4f})")
+    print(f"평균 MAE: {np.mean(mae_values):,.0f}원 (표준편차 {np.std(mae_values):,.0f}원)")
+
+    return fold_results
 
 def plot_results(model, y_test, y_pred, feature_names):
     """
