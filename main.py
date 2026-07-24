@@ -2,7 +2,7 @@ import sys
 from sklearn.model_selection import train_test_split
 from data_loader import data_load, load_weather_data, load_cpi_data
 from preprocessing import merge_data
-from model import train_and_evaluate, plot_results # 시각화 함수 임포트
+from model import train_and_evaluate, plot_results, walk_forward_evaluate
 
 def main():
     # 터미널 한글 깨짐 방지 (Windows 환경)
@@ -27,13 +27,20 @@ def main():
     X = df[features]
     y = df['일매출']
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=True, random_state=42)
+    # 시계열 데이터이므로 시간 순서를 보존한 채 마지막 20%를 테스트셋으로 고정
+    # (shuffle=True를 쓰면 테스트 시점의 인접 날짜가 학습셋에 섞여 들어가 미래 정보 누수가 발생함)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
     print("3. 모델 학습 및 평가를 진행하는 중...")
     model, pred = train_and_evaluate(X_train, X_test, y_train, y_test)
 
     print("4. 예측 결과 시각화 중...")
     plot_results(model, y_test, pred, features)
+
+    print("5. Walk-Forward 다중 폴드 검증 진행 중...")
+    # 마지막 20% 단일 홀드아웃이 특정 시즌에 쏠리는 문제를 보완하기 위해
+    # 동일 하이퍼파라미터로 여러 시점을 기준으로 재검증
+    walk_forward_evaluate(X, y, model, n_splits=5)
 
     print("프로세스 완료")
     print(df.columns)

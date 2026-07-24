@@ -3,6 +3,14 @@ import os
 from datetime import datetime, timedelta
 import config
 
+# 원본 엑셀 서식(고정 양식) 상의 셀 위치 (0-indexed row, col)
+# 표기는 엑셀 셀 주소(A1 표기법) 기준, 노트북 원본 주석을 그대로 이전함
+CELL_DAILY_SALES = (24, 0)     # A25: 일매출
+CELL_LABOR_COST = (26, 8)      # I27: 인건비용
+CELL_MATERIAL_COST = (22, 8)   # I23: 식자재비용
+CELL_OTHER_EXPENSE = (22, 10)  # K23: 기타경비비용
+CELL_TABLE_COUNT = (19, 5)     # F20: 테이블수
+
 def data_load():
     file_list = sorted([f for f in os.listdir(config.RAW_DATA_DIR) if f.endswith('.xlsx')]) # 폴더 내 엑셀 파일 목록
 
@@ -24,11 +32,11 @@ def data_load():
                 if df.shape[0] < 27 or df.shape[1] < 11:
                     continue
                     
-                daily_sales = df.iloc[24, 0]
-                labor_cost = df.iloc[26, 8]
-                material_cost = df.iloc[22, 8]
-                other_expense = df.iloc[22, 10]
-                table_count = df.iloc[19, 5] 
+                daily_sales = df.iloc[CELL_DAILY_SALES]
+                labor_cost = df.iloc[CELL_LABOR_COST]
+                material_cost = df.iloc[CELL_MATERIAL_COST]
+                other_expense = df.iloc[CELL_OTHER_EXPENSE]
+                table_count = df.iloc[CELL_TABLE_COUNT]
 
                 all_data.append({
                     'Date': current_date.strftime('%Y%m%d'),
