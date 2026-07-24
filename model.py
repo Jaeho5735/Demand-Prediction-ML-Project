@@ -51,13 +51,23 @@ def train_and_evaluate(X_train, X_test, y_train, y_test):
 
     return model, pred
 
+
+def _score_baseline(y_true, y_pred_baseline, label):
+    r2 = r2_score(y_true, y_pred_baseline)
+    mae = mean_absolute_error(y_true, y_pred_baseline)
+    print(f"  [베이스라인] {label:<28} R2={r2:>7.4f} | MAE={mae:>12,.0f}원")
+    return {'label': label, 'r2': r2, 'mae': mae}
+
+
+def evaluate_baselines(X_test, y_test):
+    print("\n--- 베이스라인 비교 (홀드아웃 테스트셋 기준) ---")
+    results = []
+    results.append(_score_baseline(y_test, X_test['전일매출'], 'Naive (전일매출)'))
+    results.append(_score_baseline(y_test, X_test['7일평균매출'], '이동평균 (7일평균매출)'))
+    return results
+
+
 def walk_forward_evaluate(X, y, base_model, n_splits=5):
-    """
-    마지막 20% 단일 홀드아웃 평가는 그 구간이 우연히 특이 시즌(예: 연말)에
-    쏠릴 경우 결과가 왜곡될 수 있다. TimeSeriesSplit으로 여러 시점을 기준으로
-    학습/검증을 반복(walk-forward)하여 더 안정적인 성능 추정치를 얻는다.
-    base_model과 동일한 하이퍼파라미터로 각 폴드마다 새로 학습한다.
-    """
     tscv = TimeSeriesSplit(n_splits=n_splits)
     fold_results = []
 
@@ -72,20 +82,39 @@ def walk_forward_evaluate(X, y, base_model, n_splits=5):
 
         r2 = r2_score(y_test, pred)
         mae = mean_absolute_error(y_test, pred)
-        fold_results.append({'fold': fold_idx, 'train_size': len(X_train), 'test_size': len(X_test), 'r2': r2, 'mae': mae})
-        print(f"Fold {fold_idx}: train={len(X_train)}, test={len(X_test)} | R2={r2:.4f} | MAE={mae:,.0f}원")
+
+        # 같은 폴드에서 베이스라인도 함께 계산 (모델과 동일한 기준으로 비교하기 위함)
+        naive_r2 = r2_score(y_test, X_test['전일매출'])
+        naive_mae = mean_absolute_error(y_test, X_test['전일매출'])
+        ma_r2 = r2_score(y_test, X_test['7일평균매출'])
+        ma_mae = mean_absolute_error(y_test, X_test['7일평균매출'])
+
+        fold_results.append({
+            'fold': fold_idx, 'train_size': len(X_train), 'test_size': len(X_test),
+            'r2': r2, 'mae': mae,
+            'naive_r2': naive_r2, 'naive_mae': naive_mae,
+            'ma_r2': ma_r2, 'ma_mae': ma_mae,
+        })
+        print(f"Fold {fold_idx}: train={len(X_train)}, test={len(X_test)}")
+        print(f"  [XGBoost]          R2={r2:>7.4f} | MAE={mae:>12,.0f}원")
+        print(f"  [Naive 베이스라인]   R2={naive_r2:>7.4f} | MAE={naive_mae:>12,.0f}원")
+        print(f"  [이동평균 베이스라인] R2={ma_r2:>7.4f} | MAE={ma_mae:>12,.0f}원")
 
     r2_values = [f['r2'] for f in fold_results]
     mae_values = [f['mae'] for f in fold_results]
-    print(f"\n평균 R2: {np.mean(r2_values):.4f} (표준편차 {np.std(r2_values):.4f})")
-    print(f"평균 MAE: {np.mean(mae_values):,.0f}원 (표준편차 {np.std(mae_values):,.0f}원)")
+    naive_r2_values = [f['naive_r2'] for f in fold_results]
+    ma_r2_values = [f['ma_r2'] for f in fold_results]
+
+    print(f"\n평균 R2 (XGBoost): {np.mean(r2_values):.4f} (표준편차 {np.std(r2_values):.4f})")
+    print(f"평균 MAE (XGBoost): {np.mean(mae_values):,.0f}원 (표준편차 {np.std(mae_values):,.0f}원)")
+    print(f"평균 R2 (Naive 베이스라인): {np.mean(naive_r2_values):.4f}")
+    print(f"평균 R2 (이동평균 베이스라인): {np.mean(ma_r2_values):.4f}")
 
     return fold_results
 
+
 def plot_results(model, y_test, y_pred, feature_names):
-    """
-    예측 결과 및 변수 중요도를 시각화합니다.
-    """
+    # 예측 결과 및 변수 중요도 시각화
     # 한글 폰트 설정 (OS별 대응)
     if platform.system() == 'Darwin': # macOS
         plt.rc('font', family='AppleGothic')
