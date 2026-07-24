@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# 실제 매장 경영정보(매출/비용) - 비공개
+xlsx/
+data/meat_data.xlsx
