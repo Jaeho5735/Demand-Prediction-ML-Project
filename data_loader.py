@@ -1,6 +1,6 @@
 import pandas as pd
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import config
 
 # 원본 엑셀 서식(고정 양식) 상의 셀 위치 (0-indexed row, col)
@@ -15,38 +15,61 @@ def data_load():
     file_list = sorted([f for f in os.listdir(config.RAW_DATA_DIR) if f.endswith('.xlsx')]) # 폴더 내 엑셀 파일 목록
 
     all_data = []
-
-    current_date = datetime(2025, 2, 1)
+    seen_dates = set()
 
     for file_name in file_list:
         file_full_path = os.path.join(config.RAW_DATA_DIR, file_name)
-        
+
+        # (수정 이력) 예전에는 '시트 순서대로 날짜를 하루씩 증가'시키는 외부 카운터를 썼음.
+        # 시트 하나만 누락/오탐되어도 그 이후 모든 날짜가 밀리는데도 감지할 방법이 없었음.
+        # 파일명이 'YYYYMM.xlsx'이고 날짜 시트명이 실제로 '1'~'31'(그 달의 일자)이므로,
+        # 카운터 대신 파일명+시트명에서 날짜를 직접 파싱하도록 변경 (누락/오탐 시 즉시 드러남).
+        try:
+            year, month = int(file_name[:4]), int(file_name[4:6])
+        except ValueError:
+            print(f"파일명이 'YYYYMM.xlsx' 형식이 아니라 건너뜀 - 파일: {file_name}")
+            continue
 
         all_sheets = pd.read_excel(file_full_path, sheet_name=None, header=None) # 모든 시트 불러오기
-        sheet_items = list(all_sheets.items())[2:]  # 두 번째 시트부터 추출
-        
+        sheet_items = list(all_sheets.items())[2:]  # 앞의 '월합산', '결산' 시트 2개를 제외한 세 번째 시트('1')부터 추출
+
         for sheet_name, df in sheet_items:
+
+            # 날짜 시트('1', '2', ... '31')가 아니면 스킵 (예: 맨 끝의 'Chart1')
+            try:
+                day = int(sheet_name)
+            except ValueError:
+                continue
+
+            try:
+                sheet_date = datetime(year, month, day)
+            except ValueError as e:
+                print(f"날짜로 변환 불가 - 파일: {file_name}, 시트: {sheet_name}, 내용: {e}")
+                continue
 
             try:
                 # 시트가 최소 요구 행/열 수보다 작은지 체크 (IndexError 방지)
                 if df.shape[0] < 27 or df.shape[1] < 11:
                     continue
-                    
+
                 daily_sales = df.iloc[CELL_DAILY_SALES]
                 labor_cost = df.iloc[CELL_LABOR_COST]
                 material_cost = df.iloc[CELL_MATERIAL_COST]
                 other_expense = df.iloc[CELL_OTHER_EXPENSE]
                 table_count = df.iloc[CELL_TABLE_COUNT]
 
+                if sheet_date in seen_dates:
+                    print(f"중복된 날짜 감지 - 파일: {file_name}, 시트: {sheet_name}, 날짜: {sheet_date.date()}")
+                seen_dates.add(sheet_date)
+
                 all_data.append({
-                    'Date': current_date.strftime('%Y%m%d'),
+                    'Date': sheet_date.strftime('%Y%m%d'),
                     'Sales': daily_sales,
                     'Labor_Cost': labor_cost,
                     'Material_Cost': material_cost,
                     'Other_Expense': other_expense,
                     'Table_Count': table_count
                 })
-                current_date += timedelta(days=1)
             except Exception as e:
                 print(f"오류 발생 - 파일: {file_name}, 시트: {sheet_name}, 내용: {e}")
 

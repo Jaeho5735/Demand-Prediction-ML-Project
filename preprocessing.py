@@ -112,7 +112,10 @@ def preprocess_cpi_data(cpi_data):
 def add_holiday_features(holiday_df, year):
     kr_holidays = holidays.KR(years = year)
     holiday_list = [d.strftime('%Y-%m-%d') for d in kr_holidays]
-    holiday_df['공휴일여부'] = holiday_df['날짜'].isin(holiday_list).astype(int)
+    # (수정 이력) '날짜'(datetime64) 대 holiday_list(str) 비교라 dtype이 불일치함.
+    # pandas 2.x는 현재 암묵적 캐스팅으로 매칭해주지만 FutureWarning과 함께 향후 버전에서
+    # 제거될 동작이라, 문자열로 명시 변환한 뒤 비교하도록 안전장치를 추가함.
+    holiday_df['공휴일여부'] = holiday_df['날짜'].dt.strftime('%Y-%m-%d').isin(holiday_list).astype(int)
     holiday_df['공휴일전날'] = holiday_df['공휴일여부'].shift(-1).fillna(0).astype(int)
     
     # 휴일지수: 금(4), 토(5), 일(6) + 공휴일 + 공휴일전날
