@@ -1,6 +1,6 @@
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, r2_score, mean_squared_error
-from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+from sklearn.model_selection import RandomizedSearchCV, TimeSeriesSplit
 from sklearn.base import clone
 import numpy as np
 import matplotlib.pyplot as plt
@@ -15,22 +15,34 @@ def train_and_evaluate(X_train, X_test, y_train, y_test):
     )
 
     # 탐색할 파라미터 그리드 설정
-    param_grid = {
-        'n_estimators': [500, 700, 1000],
-        'learning_rate': [0.01, 0.05, 0.1],
-        'max_depth': [3, 5, 7],
-        'subsample': [0.8, 0.9, 1.0]
+    # (수정 이력) 기존 그리드(n_estimators 500~1000, max_depth 3~7, 정규화 파라미터 없음)는
+    # 학습 표본 규모(홀드아웃 기준 269행, Walk-Forward 1폴드는 57행)에 비해 지나치게 복잡한 쪽으로만
+    # 탐색해서 과적합을 유도했음 (실측: 당시 best_params였던 depth=7·n=500 조합은 Train R2=0.979,
+    # Test R2=0.040으로 과적합 갭이 매우 컸고, Walk-Forward 5-Fold에서 이동평균 베이스라인에 5전 5패).
+    # depth를 낮출수록 Walk-Forward 성능이 꾸준히 개선되는 것을 확인해, 얕은 트리(max_depth 1~3)와
+    # 적은 트리 수(n_estimators 30~200), 정규화 파라미터(reg_lambda, min_child_weight)를 탐색 범위에
+    # 새로 포함시킴. 조합 수가 커져(4*3*3*3*3*3=972) 전수 탐색인 GridSearchCV 대신
+    # RandomizedSearchCV(n_iter=150)로 전환함.
+    param_distributions = {
+        'n_estimators': [30, 50, 100, 200],
+        'learning_rate': [0.03, 0.05, 0.1],
+        'max_depth': [1, 2, 3],
+        'subsample': [0.7, 0.8, 0.9],
+        'reg_lambda': [1, 5, 10],
+        'min_child_weight': [1, 5, 10],
     }
 
-    # GridSearchCV 설정 (TimeSeriesSplit 기반 3-Fold 교차 검증)
+    # RandomizedSearchCV 설정 (TimeSeriesSplit 기반 3-Fold 교차 검증)
     # 시계열 데이터이므로 각 폴드의 학습 구간이 항상 검증 구간보다 과거여야 함.
     # 기본 KFold(shuffle=False)는 구간을 시간순으로 자르긴 하지만, 앞쪽 구간을 검증하는
     # 폴드에서는 뒤쪽(미래) 구간이 학습에 쓰여 미래 정보가 유입되는 문제가 있어 TimeSeriesSplit로 대체.
-    grid_search = GridSearchCV(
+    grid_search = RandomizedSearchCV(
         estimator=xgb,
-        param_grid=param_grid,
+        param_distributions=param_distributions,
+        n_iter=150,
         cv=TimeSeriesSplit(n_splits=3),
         scoring='r2',
+        random_state=42,
         verbose=1
     )
 
