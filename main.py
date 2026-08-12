@@ -50,22 +50,26 @@ def main():
     print("3. 모델 학습 및 하이퍼파라미터 탐색 중 (dev set 내부)...")
     model, pred = train_and_evaluate(X_train, X_test, y_train, y_test)
 
-    print("4. 베이스라인 대비 성능 비교 중 (dev set 홀드아웃 기준)...")
+    print("4. 베이스라인 대비 성능 비교 중 (dev set 홀드아웃 기준, 참고용)...")
     # XGBoost 모델이 "아무 규칙 없이 어제 매출/7일 평균을 그대로 예측한 것"보다
     # 실제로 더 나은지 확인 (R2/MAE 단독 수치만으로는 모델의 가치를 판단할 수 없기 때문)
+    # 주의: 이 dev set 홀드아웃은 하이퍼파라미터 선택에 관여한 구간이라 낙관 편향이 섞여 있음.
+    # 대표 성능/시각화는 전부 7번의 최종 홀드아웃 기준으로 한다.
     evaluate_baselines(X_test, y_test)
 
-    print("5. 예측 결과 시각화 중...")
-    plot_results(model, y_test, pred, features)
-
-    print("6. Walk-Forward 다중 폴드 검증 진행 중 (dev set 내부)...")
+    print("5. Walk-Forward 다중 폴드 검증 진행 중 (dev set 내부, 참고용)...")
     # 마지막 20% 단일 홀드아웃이 특정 시즌에 쏠리는 문제를 보완하기 위해
     # 동일 하이퍼파라미터로 여러 시점을 기준으로 재검증 (베이스라인도 폴드마다 함께 비교).
     # 주의: 이 점수는 하이퍼파라미터를 고르면서 참고했던 지표라 낙관 편향이 섞여 있음 (README 참고).
     walk_forward_evaluate(X_dev, y_dev, model, n_splits=5)
 
-    print("7. 최종 홀드아웃 검증 (튜닝에 전혀 관여하지 않은 마지막 3개월, 단 한 번만 평가)...")
-    evaluate_final_holdout(model, X_dev, y_dev, X_final, y_final)
+    print("6. 최종 홀드아웃 검증 (튜닝에 전혀 관여하지 않은 마지막 3개월, 단 한 번만 평가)...")
+    final_model, final_pred, final_metrics = evaluate_final_holdout(model, X_dev, y_dev, X_final, y_final)
+
+    print("7. 예측 결과 시각화 중 (최종 홀드아웃 기준 — 이 프로젝트의 대표 성능)...")
+    # dev set 홀드아웃이 아니라 최종 홀드아웃(튜닝에 전혀 쓰이지 않은 마지막 3개월)의
+    # 예측 결과를 그려야 README/VALIDATION.md에 기록한 대표 성능(R2, MAE)과 그래프가 일치함.
+    plot_results(final_model, y_final, final_pred, features)
 
     print("프로세스 완료")
     print(df.columns)

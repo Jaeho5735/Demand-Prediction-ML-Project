@@ -99,7 +99,7 @@ def evaluate_final_holdout(base_model, X_dev, y_dev, X_final, y_final):
 
     evaluate_baselines(X_final, y_final, label='최종 홀드아웃 기준')
 
-    return final_model, {'r2': r2, 'mae': mae, 'rmse': rmse}
+    return final_model, pred, {'r2': r2, 'mae': mae, 'rmse': rmse}
 
 
 def walk_forward_evaluate(X, y, base_model, n_splits=5):
