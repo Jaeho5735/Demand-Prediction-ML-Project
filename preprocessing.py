@@ -90,7 +90,11 @@ def preprocess_cpi_data(cpi_data):
         return pd.Series(weighted_avg)
 
     # 전체 품목 및 식료품 가중 평균 산출
-    meat_weighted_avg = get_weighted_avg(2)
+    # (수정 이력) get_weighted_avg(2)처럼 정수를 넘기면 cpi_data.iloc[2]가 DataFrame이 아니라
+    # 단일 행 Series를 반환해, 가중평균 계산이 (값*가중치)/가중치로 셀프캔슬되어 사실상
+    # '육류' 항목의 원본 물가지수를 그대로 반환하는 것과 같았음(결과값 자체는 우연히 같았지만
+    # 계산 로직은 의도와 다르게 동작). 리스트로 감싸 명시적으로 DataFrame을 넘기도록 수정.
+    meat_weighted_avg = get_weighted_avg([2])
     food_weighted_avg = get_weighted_avg(range(5))
 
     df_cpi_result = pd.DataFrame({

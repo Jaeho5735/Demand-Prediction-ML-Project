@@ -71,12 +71,35 @@ def _score_baseline(y_true, y_pred_baseline, label):
     return {'label': label, 'r2': r2, 'mae': mae}
 
 
-def evaluate_baselines(X_test, y_test):
-    print("\n--- 베이스라인 비교 (홀드아웃 테스트셋 기준) ---")
+def evaluate_baselines(X_test, y_test, label='홀드아웃 테스트셋 기준'):
+    print(f"\n--- 베이스라인 비교 ({label}) ---")
     results = []
     results.append(_score_baseline(y_test, X_test['전일매출'], 'Naive (전일매출)'))
     results.append(_score_baseline(y_test, X_test['7일평균매출'], '이동평균 (7일평균매출)'))
     return results
+
+
+def evaluate_final_holdout(base_model, X_dev, y_dev, X_final, y_final):
+    # 하이퍼파라미터 탐색, Walk-Forward 검증 어디에도 이 구간(마지막 3개월)의 점수를
+    # 참고한 적이 없으므로, 여기서 나오는 값이 이 프로젝트에서 낙관 편향이 가장 적은 지표다.
+    # 같은 하이퍼파라미터로 dev set 전체(튜닝에 쓰인 80%+20% 전부)를 다시 학습시킨 뒤,
+    # 최종 홀드아웃에서 딱 한 번만 예측/평가한다.
+    final_model = clone(base_model)
+    final_model.fit(X_dev, y_dev)
+    pred = final_model.predict(X_final)
+
+    r2 = r2_score(y_final, pred)
+    mae = mean_absolute_error(y_final, pred)
+    rmse = np.sqrt(mean_squared_error(y_final, pred))
+
+    print("\n--- 최종 홀드아웃 검증 (튜닝에 전혀 관여하지 않은 마지막 3개월) ---")
+    print(f"R2 Score: {r2:.4f}")
+    print(f"MAE: {mae:,.0f}원")
+    print(f"RMSE: {rmse:,.0f}원")
+
+    evaluate_baselines(X_final, y_final, label='최종 홀드아웃 기준')
+
+    return final_model, {'r2': r2, 'mae': mae, 'rmse': rmse}
 
 
 def walk_forward_evaluate(X, y, base_model, n_splits=5):
